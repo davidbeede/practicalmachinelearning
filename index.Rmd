@@ -1,0 +1,179 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "David Beede"
+date: "May 8, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+In this report, I develop a model to predict whether a person is lifting a dumbell properly and if not, to identify what that person is doing wrong.  The model is  based on data from accelerometers placed on the belt, forearm, arm, and dumbell collected when six participants are told to lift the dumbell properly or do lift it in four improper ways for multiple repetitions of the exercise.   The steps taken to develop the model include:
+- cleaning up the data to remove irrelevant items
+- taking a random 70 percent sample of the data for training purposes and setting aside the rest for testing purposes
+- running a machine learning algorithm of exercise performance class as a function of accelerometer data that fits the training data well
+- testing the model on the 30 percent testing data set.
+
+The model chosen is the gradient boosting machiing (GBM) method for estimating tree models.  Evidence suggests that this method often has a lower test classification error rate than other tree-related machine learning algorithms (see, for example, James, et al., pp. 321-323 and 330-331). 
+
+I find that a 10-fold cross-validated GBM model with 200 or more trees, interaction depth of 6, shrinkage paramater of 0.1, and minimum number of observations per node equal to 10 achieves cross-validation accuracy rates of 0.99 or greater.  The model does not appear to be overfit; the accuracy rate using the testing sample data is only slightly lower than the accuracy achieved using the training sample data.  Finally, I also use the final model to predict exercise quality classes for a sample of 20 observations in order to fulfill the requirements of the project-related quiz.
+
+(Note:  references for the data used in the analyses performed for this report are in the credits section at the end of the report.) 
+
+The remainder of the report outlines the steps taken using R to fit and test the model.
+
+# Set working dir, load libraries, set seed, and obtain PML data
+```{r data, echo=TRUE}
+library(caret, warn.conflicts = FALSE, quietly = TRUE)
+library(dplyr, warn.conflicts = FALSE, quietly = TRUE)
+library(gbm, warn.conflicts = FALSE, quietly = TRUE)
+library(plyr, warn.conflicts = FALSE, quietly = TRUE)
+library(splines, warn.conflicts = FALSE, quietly = TRUE)
+library(survival, warn.conflicts = FALSE, quietly = TRUE)
+setwd("~/JHU_DataScience/PracticalMachineLearning/practicalmachinelearning")
+
+# temp <- tempfile()
+# download.file(paste("https://d396qusza40orc.cloudfront.net/",
+#         "predmachlearn/pml-training.csv", sep=""), temp)
+# pml_training <- read.csv(temp)
+pml_training <- read.csv("pml-training.csv")
+
+# temp <- tempfile()
+# download.file(paste("https://d396qusza40orc.cloudfront.net/",
+#         "predmachlearn/pml-testing.csv", sep=""), temp)
+# pml_testing <- read.csv(temp)
+pml_testing <- read.csv("pml-testing.csv")
+```
+
+#Clean the pml-training dataset by getting rid of the calculated features.
+
+```{r clean}
+temp1 <- select(pml_training, starts_with("roll"))
+temp2 <- select(pml_training, starts_with("pitch"))
+temp3 <- select(pml_training, starts_with("yaw"))
+temp4 <- select(pml_training, starts_with("total"))  
+temp5 <- select(pml_training, starts_with("gyros"))
+temp6 <- select(pml_training, starts_with("accel"))
+temp7 <- select(pml_training, starts_with("magnet"))
+temp8 <- select(pml_training, classe)
+pml_training_new <- data.frame(temp1, temp2, temp3, temp4,temp5, temp6, 
+                               temp7, temp8)
+```
+Set seed and partition pml_training_new into train and test datasets.
+
+```{r partition}
+set.seed(95014)
+inTraining <- createDataPartition(pml_training_new$classe, p = .75, list=FALSE)
+training <- pml_training_new[inTraining,]
+testing <- pml_training_new[-inTraining,]
+```
+Set up training run for x / y syntax because model format performs poorly.
+
+```{r xy}
+x_train <- training[,-53]
+y_train <- training[,53]
+x_test <- testing[,-53]
+y_test <- testing[,53]
+```
+Configure parallel processing:
+
+```{r parallel}
+library(parallel, quietly = TRUE)
+library(doParallel, quietly = TRUE)
+set.seed(22307)
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+```
+Set fitControl parameters to do 10-fold cross validation (to estimate the test error associated with the model in order to evaluate its performance) and allow for 
+parallel processing.
+
+```{r fitcontrol}
+fitControl <- trainControl(method="cv",
+                           number = 10,
+                           allowParallel = TRUE)
+```
+Run gradient boosting machine using default tuning parameters.
+
+```{r fit1}
+fit1 <- train(x_train, y_train, method="gbm", trControl=fitControl, 
+              verbose=FALSE)
+stopCluster(cluster)
+```
+The following chart shows the relationship between tuning parameters and the cross-validated accuracy of the model.  In particular it shows that accuracy increases with the number of trees and that relationship shifts upward with greater tree depth.  This chart will help inform the second model fit later in this report. 
+
+``` {r plotfit1}
+plot(fit1)
+```
+
+The following summarizes the results of the fitted model.
+
+``` {r fit1results}
+fit1
+fit1$resample
+confusionMatrix.train(fit1)
+```
+Using the defaulting tuning values grid, the final parameters used in the model
+(number of trees = 150, interaction depth = 3, shrinking parameter = 0.1, and minimum number of observations in each node = 10) yielded a training sample accuracy rate of 0.96 (i.e., an estimated out-of-sample error rate of 0.4).  Since the probability of predicting 20 cases with 100% accuracy is equal to 0.96^20 = 0.442, I need to do revisit the tuning parameters to achieve better than 0.99 accuracy  (probability of predicting 20 cases perfectly = 0.82) in order to pass the quiz (see https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-requiredModelAccuracy.md for details).
+
+So I decided to re-tune the model by increasing the interaction depth of the model to 6 and the number of trees to 200, 300, 400, and 500. 
+
+``` {r refit}
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+gbmGrid <-  expand.grid(interaction.depth = 6,
+                        n.trees = c(200,300,400,500),
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
+
+fit2 <- train(x_train, y_train, method="gbm", 
+             trControl=fitControl, tuneGrid = gbmGrid, verbose=FALSE)
+stopCluster(cluster)
+```
+The following chart shows the relationship between the number of trees and cross-validated accuracy. It shows that the model fit with 200 or more trees achieves accuracy of 0.99 and higher.
+
+``` {r plotfit2}
+plot(fit2)
+```
+
+The following results show how well the second model fits the data:
+
+``` {r fit2results}
+fit2
+fit2$resample
+confusionMatrix.train(fit2)
+```
+By adjusting the tunining parameters I achieved an accuracy rate of 0.9953 (i.e., an estimated out-of-sample error rate of less than 0.005) using 500 trees.  But - has the model been overfit?  Now is the time to use the model to predict classes using the test data set (30% of total observations) I had set aside earlier.
+
+``` {r test}
+predfit2 <- predict(fit2, newdata=x_test)
+confusionMatrix(y_test,predfit2)
+```
+The model achieved an accuracy of 0.9945 on the test data set - only a slight
+increase in the accuracy rate achieved using the training data set.  Success!
+
+#Quiz results
+In this section I clean up the 20-observation test data set and predict classes for each observation using the model estimated above:
+``` {r quiz}
+temp1 <- select(pml_testing, starts_with("roll"))
+temp2 <- select(pml_testing, starts_with("pitch"))
+temp3 <- select(pml_testing, starts_with("yaw"))
+temp4 <- select(pml_testing, starts_with("total"))  
+temp5 <- select(pml_testing, starts_with("gyros"))
+temp6 <- select(pml_testing, starts_with("accel"))
+temp7 <- select(pml_testing, starts_with("magnet"))
+pml_testing_new <- data.frame(temp1, temp2, temp3, temp4,temp5, temp6, 
+                               temp7)
+predquiz <- predict(fit2, newdata=pml_testing_new)
+print(predquiz)
+```
+# Credits
+The source for the data used in this project is:  http://groupware.les.inf.puc-rio.br/har. 
+
+The data are described at http://groupware.les.inf.puc-rio.br/har#ixzz484VEFWp1 and in more detail in this paper:  
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. (http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
+
+The method for parallel processing the boosting model used in this report is described by Len Greski on his Github page: https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md.
+
+See also re boosting models:
+James, Gareth, Daniela Witten, Trevor Hastie, and Robert Tibshirani.  *An Introduction to Statistical Learning with Applications in R.*  (Springer: New York) 2013. 
