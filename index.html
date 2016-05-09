@@ -360,23 +360,6 @@ confusionMatrix(y_test,predfit2)</code></pre>
 ## Balanced Accuracy      0.9974   0.9977   0.9930   0.9953   0.9996</code></pre>
 <p>The model achieved an accuracy of 0.9945 on the test data set - only a slight increase in the accuracy rate achieved using the training data set. Success!</p>
 </div>
-<div id="quiz-results" class="section level1">
-<h1>Quiz results</h1>
-<p>In this section I clean up the 20-observation test data set and predict classes for each observation using the model estimated above:</p>
-<pre class="r"><code>temp1 &lt;- select(pml_testing, starts_with(&quot;roll&quot;))
-temp2 &lt;- select(pml_testing, starts_with(&quot;pitch&quot;))
-temp3 &lt;- select(pml_testing, starts_with(&quot;yaw&quot;))
-temp4 &lt;- select(pml_testing, starts_with(&quot;total&quot;))  
-temp5 &lt;- select(pml_testing, starts_with(&quot;gyros&quot;))
-temp6 &lt;- select(pml_testing, starts_with(&quot;accel&quot;))
-temp7 &lt;- select(pml_testing, starts_with(&quot;magnet&quot;))
-pml_testing_new &lt;- data.frame(temp1, temp2, temp3, temp4,temp5, temp6, 
-                               temp7)
-predquiz &lt;- predict(fit2, newdata=pml_testing_new)
-print(predquiz)</code></pre>
-<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
-## Levels: A B C D E</code></pre>
-</div>
 <div id="credits" class="section level1">
 <h1>Credits</h1>
 <p>The source for the data used in this project is: <a href="http://groupware.les.inf.puc-rio.br/har" class="uri">http://groupware.les.inf.puc-rio.br/har</a>.</p>

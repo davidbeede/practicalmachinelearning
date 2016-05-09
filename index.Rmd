@@ -152,21 +152,7 @@ confusionMatrix(y_test,predfit2)
 The model achieved an accuracy of 0.9945 on the test data set - only a slight
 increase in the accuracy rate achieved using the training data set.  Success!
 
-#Quiz results
-In this section I clean up the 20-observation test data set and predict classes for each observation using the model estimated above:
-``` {r quiz}
-temp1 <- select(pml_testing, starts_with("roll"))
-temp2 <- select(pml_testing, starts_with("pitch"))
-temp3 <- select(pml_testing, starts_with("yaw"))
-temp4 <- select(pml_testing, starts_with("total"))  
-temp5 <- select(pml_testing, starts_with("gyros"))
-temp6 <- select(pml_testing, starts_with("accel"))
-temp7 <- select(pml_testing, starts_with("magnet"))
-pml_testing_new <- data.frame(temp1, temp2, temp3, temp4,temp5, temp6, 
-                               temp7)
-predquiz <- predict(fit2, newdata=pml_testing_new)
-print(predquiz)
-```
+
 # Credits
 The source for the data used in this project is:  http://groupware.les.inf.puc-rio.br/har. 
 
